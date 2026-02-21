@@ -1,183 +1,108 @@
 import { KnowledgeGraph, KnowledgeConcept, KnowledgeRelation } from "@/types";
+import OpenAI from "openai";
 
-const STOP_WORDS = new Set([
-  "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-  "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
-  "being", "have", "has", "had", "do", "does", "did", "will", "would",
-  "could", "should", "may", "might", "shall", "can", "need", "dare",
-  "ought", "used", "it", "its", "this", "that", "these", "those",
-  "i", "me", "my", "we", "our", "you", "your", "he", "him", "his",
-  "she", "her", "they", "them", "their", "what", "which", "who",
-  "when", "where", "how", "not", "no", "nor", "as", "if", "then",
-  "than", "too", "very", "just", "about", "above", "after", "again",
-  "all", "also", "am", "any", "because", "before", "between", "both",
-  "each", "few", "more", "most", "other", "over", "own", "same",
-  "so", "some", "such", "up", "out", "only", "into", "through",
-  "during", "here", "there", "once", "further", "while", "however",
-  "although", "though", "since", "until", "unless", "whether",
-  "either", "neither", "yet", "still", "already", "often", "never",
-  "always", "sometimes", "usually", "many", "much", "well",
-  "even", "also", "back", "get", "go", "make", "like", "see",
-  "know", "take", "come", "think", "look", "want", "give", "use",
-  "find", "tell", "ask", "work", "seem", "feel", "try", "leave",
-  "call", "one", "two", "three", "new", "first", "last", "long",
-  "great", "little", "right", "old", "big", "high", "small",
-  "large", "good", "bad", "different", "important", "said",
-  "may", "must", "now", "people", "way", "time", "part",
-  "made", "set", "per", "end", "put", "say", "show", "let",
-  "include", "includes", "including", "based", "using", "common",
-  "type", "types", "involves", "requires", "allows", "performs",
-  "well", "known", "used", "called", "given", "without",
-]);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  "core-concept": ["definition", "fundamental", "principle", "theory", "concept", "framework", "key", "refers"],
-  "process": ["process", "method", "step", "procedure", "algorithm", "workflow", "phase", "technique"],
-  "entity": ["system", "component", "structure", "model", "architecture", "module", "layer", "network"],
-  "property": ["property", "attribute", "characteristic", "feature", "quality", "aspect", "metric"],
-  "example": ["example", "case", "instance", "illustration", "scenario", "application", "such as"],
-};
-
-function classifyConcept(term: string, context: string): string {
-  const lowerContext = context.toLowerCase();
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => lowerContext.includes(kw))) {
-      return category;
-    }
-  }
-  return "core-concept";
+interface AIConcept {
+  label: string;
+  description: string;
+  context: string;
+  category: string;
+  socraticQuestion: string;
+  relatedTopics: string[];
 }
 
-function generateSocraticQuestion(term: string, context: string): string {
-  const questions = [
-    `What would happen if ${term} didn't exist in this context?`,
-    `How does ${term} relate to the broader system described here?`,
-    `Can you explain ${term} in your own words without looking at the source?`,
-    `What assumptions does the concept of ${term} rely on?`,
-    `If you had to teach ${term} to someone, what analogy would you use?`,
-    `What are the boundary conditions or edge cases of ${term}?`,
-    `How might ${term} evolve or change in the future?`,
-    `What's the most counterintuitive aspect of ${term}?`,
-  ];
-  const hash = term.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return questions[hash % questions.length];
+const SYSTEM_PROMPT = `You are an expert educator and knowledge graph builder. Given the full text of a document, you must:
+
+1. Identify exactly 18 meaningful, distinct topics/concepts from the document. These should be real conceptual topics — not random phrases or filler words. Choose topics that a student would need to understand to master this material.
+
+2. For each topic, provide:
+   - label: A concise name (2-5 words)
+   - description: A one-sentence explanation of this topic as it appears in the document
+   - context: The most relevant sentence or passage (verbatim from the document) that explains this topic
+   - category: One of "core-concept", "process", "entity", "property", or "example"
+   - socraticQuestion: A thought-provoking question that tests deep understanding (not just recall) of this topic. The question should push the student to think critically, make connections, or apply the concept.
+   - relatedTopics: An array of labels (from your list of 18) that this topic is closely related to
+
+Return valid JSON with this exact structure:
+{
+  "concepts": [
+    {
+      "label": "...",
+      "description": "...",
+      "context": "...",
+      "category": "...",
+      "socraticQuestion": "...",
+      "relatedTopics": ["...", "..."]
+    }
+  ]
 }
 
-function extractSentences(text: string): string[] {
-  return text
-    .replace(/\n+/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .filter((s) => s.trim().length > 20);
-}
+Return exactly 18 concepts. No markdown, no explanation — just the JSON object.`;
 
-function extractNGrams(text: string, n: number): string[] {
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+export async function generateKnowledgeGraph(
+  text: string,
+  filename: string
+): Promise<KnowledgeGraph> {
+  const truncated = text.slice(0, 30000);
 
-  const ngrams: string[] = [];
-  for (let i = 0; i <= words.length - n; i++) {
-    ngrams.push(words.slice(i, i + n).join(" "));
-  }
-  return ngrams;
-}
-
-function findContextForTerm(term: string, sentences: string[]): string {
-  const lowerTerm = term.toLowerCase();
-  for (const sentence of sentences) {
-    if (sentence.toLowerCase().includes(lowerTerm)) {
-      return sentence.trim().slice(0, 300);
-    }
-  }
-  return sentences[0]?.trim().slice(0, 300) || "";
-}
-
-export function generateKnowledgeGraph(text: string, filename: string): KnowledgeGraph {
-  const sentences = extractSentences(text);
-  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim().length > 50);
-
-  const unigramFreq = new Map<string, number>();
-  const bigramFreq = new Map<string, number>();
-
-  for (const para of paragraphs) {
-    const unigrams = extractNGrams(para, 1);
-    const bigrams = extractNGrams(para, 2);
-
-    for (const term of unigrams) {
-      unigramFreq.set(term, (unigramFreq.get(term) || 0) + 1);
-    }
-    for (const term of bigrams) {
-      bigramFreq.set(term, (bigramFreq.get(term) || 0) + 1);
-    }
-  }
-
-  const normalizedText = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ");
-  const selectedBigrams = [...bigramFreq.entries()]
-    .filter(([bigram, freq]) => {
-      if (freq < 2) return false;
-      return normalizedText.includes(bigram);
-    })
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
-
-  const bigramWords = new Set<string>();
-  for (const [bigram] of selectedBigrams) {
-    for (const word of bigram.split(" ")) {
-      bigramWords.add(word);
-    }
-  }
-
-  const selectedUnigrams = [...unigramFreq.entries()]
-    .filter(([term, freq]) => freq >= 3 && term.length > 3 && !bigramWords.has(term))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-
-  const allTerms = [
-    ...selectedBigrams.map(([term]) => term),
-    ...selectedUnigrams.map(([term]) => term),
-  ].slice(0, 18);
-
-  const titleCase = (s: string) =>
-    s
-      .split(" ")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-
-  const concepts: KnowledgeConcept[] = allTerms.map((term, i) => {
-    const context = findContextForTerm(term, sentences);
-    const category = classifyConcept(term, context);
-    const freq = bigramFreq.get(term) || unigramFreq.get(term) || 0;
-    return {
-      id: `node-${i}`,
-      label: titleCase(term),
-      description: `Key concept extracted from the document with ${freq} occurrences.`,
-      context,
-      mastery: 0,
-      category,
-      socraticQuestion: generateSocraticQuestion(titleCase(term), context),
-    };
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `Here is the document text:\n\n${truncated}`,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: "json_object" },
   });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("OpenAI returned an empty response");
+  }
+
+  const parsed: { concepts: AIConcept[] } = JSON.parse(content);
+
+  if (!parsed.concepts || parsed.concepts.length === 0) {
+    throw new Error("OpenAI returned no concepts");
+  }
+
+  const concepts: KnowledgeConcept[] = parsed.concepts
+    .slice(0, 18)
+    .map((c, i) => ({
+      id: `node-${i}`,
+      label: c.label,
+      description: c.description,
+      context: c.context.slice(0, 500),
+      mastery: 0,
+      category: c.category || "core-concept",
+      socraticQuestion: c.socraticQuestion,
+    }));
+
+  const labelToId = new Map<string, string>();
+  for (const c of concepts) {
+    labelToId.set(c.label.toLowerCase(), c.id);
+  }
 
   const relations: KnowledgeRelation[] = [];
   const addedEdges = new Set<string>();
 
-  for (const para of paragraphs) {
-    const lowerPara = para.toLowerCase();
-    const presentTerms = allTerms.filter((t) => lowerPara.includes(t));
+  for (let i = 0; i < parsed.concepts.length && i < 18; i++) {
+    const aiConcept = parsed.concepts[i];
+    const sourceId = `node-${i}`;
 
-    for (let i = 0; i < presentTerms.length; i++) {
-      for (let j = i + 1; j < presentTerms.length; j++) {
-        const sourceIdx = allTerms.indexOf(presentTerms[i]);
-        const targetIdx = allTerms.indexOf(presentTerms[j]);
-        const edgeKey = `${Math.min(sourceIdx, targetIdx)}-${Math.max(sourceIdx, targetIdx)}`;
-
-        if (!addedEdges.has(edgeKey) && relations.length < 30) {
+    for (const relatedLabel of aiConcept.relatedTopics || []) {
+      const targetId = labelToId.get(relatedLabel.toLowerCase());
+      if (targetId && targetId !== sourceId) {
+        const edgeKey = [sourceId, targetId].sort().join("-");
+        if (!addedEdges.has(edgeKey)) {
           addedEdges.add(edgeKey);
           relations.push({
-            source: `node-${sourceIdx}`,
-            target: `node-${targetIdx}`,
+            source: sourceId,
+            target: targetId,
             label: "relates to",
           });
         }
