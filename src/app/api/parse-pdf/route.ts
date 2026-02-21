@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const graph = generateKnowledgeGraph(text, file.name);
+    const graph = await generateKnowledgeGraph(text, file.name);
 
     return NextResponse.json({ graph });
   } catch (error) {
