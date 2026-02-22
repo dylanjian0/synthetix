@@ -22,7 +22,7 @@ export default function Home() {
 
   const learnedCount = graph?.concepts.filter((c) => c.mastery >= 85).length ?? 0;
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (file: File, topicCount: number | null) => {
     setIsProcessing(true);
     setGraph(null);
     setSelectedNodeId(null);
@@ -31,6 +31,9 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (topicCount !== null) {
+        formData.append("topicCount", topicCount.toString());
+      }
 
       const response = await fetch("/api/parse-pdf", {
         method: "POST",
