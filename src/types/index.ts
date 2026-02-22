@@ -12,6 +12,7 @@ export interface KnowledgeRelation {
   source: string;
   target: string;
   label: string;
+  strength: number;
 }
 
 export interface KnowledgeGraph {
