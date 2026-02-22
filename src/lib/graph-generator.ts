@@ -18,9 +18,18 @@ interface AIRelationship {
   strength: number;
 }
 
-const SYSTEM_PROMPT = `You are an expert educator and knowledge graph builder. Given the full text of a document, you must:
+function buildSystemPrompt(topicCount: number | null): string {
+  const topicInstruction = topicCount
+    ? `Identify exactly ${topicCount} meaningful, distinct topics/concepts from the document.`
+    : `Identify between 8 and 25 meaningful, distinct topics/concepts from the document. Choose the number that best fits the document's complexity and breadth — use fewer for focused documents, more for comprehensive ones.`;
 
-1. Identify exactly 18 meaningful, distinct topics/concepts from the document. These should be real conceptual topics — not random phrases or filler words. Choose topics that a student would need to understand to master this material.
+  const countInstruction = topicCount
+    ? `Return exactly ${topicCount} concepts.`
+    : `Return the appropriate number of concepts (between 8 and 25) based on the document's content.`;
+
+  return `You are an expert educator and knowledge graph builder. Given the full text of a document, you must:
+
+1. ${topicInstruction} These should be real conceptual topics — not random phrases or filler words. Choose topics that a student would need to understand to master this material.
 
 2. For each topic, provide:
    - label: A concise name (2-5 words)
@@ -35,7 +44,7 @@ const SYSTEM_PROMPT = `You are an expert educator and knowledge graph builder. G
    - label: A short phrase (2-5 words) describing HOW they relate (e.g. "is a type of", "depends on", "contrasts with", "builds upon", "is applied in", "enables")
    - strength: An integer from 1-10 indicating how closely related they are (10 = inseparable, 1 = loosely related)
 
-   A topic can have relationships with many other topics. Include all meaningful relationships — aim for 25-45 total relationships. Only include relationships that genuinely exist in the document's content.
+   A topic can have relationships with many other topics. Include all meaningful relationships. Only include relationships that genuinely exist in the document's content.
 
 Return valid JSON with this exact structure:
 {
@@ -58,22 +67,29 @@ Return valid JSON with this exact structure:
   ]
 }
 
-Return exactly 18 concepts. No markdown, no explanation — just the JSON object.`;
+${countInstruction} No markdown, no explanation — just the JSON object.`;
+}
 
 const ESTIMATED_OUTPUT_CHARS = 9000;
 
+export interface GenerateOptions {
+  topicCount: number | null;
+}
+
 export async function* generateKnowledgeGraphStream(
   text: string,
-  filename: string
+  filename: string,
+  options: GenerateOptions = { topicCount: null }
 ): AsyncGenerator<{ progress: number; stage: string; graph?: KnowledgeGraph }> {
   const truncated = text.slice(0, 30000);
+  const systemPrompt = buildSystemPrompt(options.topicCount);
 
   yield { progress: 5, stage: "Connecting to AI..." };
 
   const stream = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: `Here is the document text:\n\n${truncated}`,
@@ -87,11 +103,15 @@ export async function* generateKnowledgeGraphStream(
   let content = "";
   let lastYieldedProgress = 5;
 
+  const estimatedChars = options.topicCount
+    ? Math.max(4000, options.topicCount * 500)
+    : ESTIMATED_OUTPUT_CHARS;
+
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content || "";
     content += delta;
 
-    const rawProgress = Math.min(95, (content.length / ESTIMATED_OUTPUT_CHARS) * 90 + 5);
+    const rawProgress = Math.min(95, (content.length / estimatedChars) * 90 + 5);
     const progress = Math.round(rawProgress);
 
     if (progress > lastYieldedProgress + 2) {
@@ -113,8 +133,9 @@ export async function* generateKnowledgeGraphStream(
     throw new Error("OpenAI returned no concepts");
   }
 
+  const maxConcepts = options.topicCount || 30;
   const concepts: KnowledgeConcept[] = parsed.concepts
-    .slice(0, 18)
+    .slice(0, maxConcepts)
     .map((c, i) => ({
       id: `node-${i}`,
       label: c.label,
