@@ -25,7 +25,7 @@ function buildSystemPrompt(topicCount: number | null): string {
 
   const countInstruction = topicCount
     ? `Return exactly ${topicCount} concepts.`
-    : `Return the appropriate number of concepts (between 8 and 25) based on the document's content.`;
+    : `Return the number of concepts (between 2 and 60) that best matches the document's scope. Prioritize appropriateness over hitting any particular number.`;
 
   return `You are an expert educator and knowledge graph builder. Given the full text of a document, you must:
 
@@ -133,7 +133,7 @@ export async function* generateKnowledgeGraphStream(
     throw new Error("OpenAI returned no concepts");
   }
 
-  const maxConcepts = options.topicCount || 30;
+  const maxConcepts = options.topicCount ?? 60;
   const concepts: KnowledgeConcept[] = parsed.concepts
     .slice(0, maxConcepts)
     .map((c, i) => ({
