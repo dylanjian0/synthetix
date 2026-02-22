@@ -6,6 +6,13 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const topicCountStr = formData.get("topicCount") as string | null;
+
+    const topicCount = topicCountStr ? parseInt(topicCountStr, 10) : null;
+    const validTopicCount =
+      topicCount !== null && !isNaN(topicCount) && topicCount >= 3 && topicCount <= 30
+        ? topicCount
+        : null;
 
     if (!file) {
       return new Response(
@@ -41,7 +48,9 @@ export async function POST(request: NextRequest) {
             encoder.encode(`data: ${JSON.stringify({ progress: 2, stage: "Extracting text..." })}\n\n`)
           );
 
-          const generator = generateKnowledgeGraphStream(text, file.name);
+          const generator = generateKnowledgeGraphStream(text, file.name, {
+            topicCount: validTopicCount,
+          });
 
           for await (const update of generator) {
             controller.enqueue(
