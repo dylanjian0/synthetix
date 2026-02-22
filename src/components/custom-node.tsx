@@ -59,6 +59,14 @@ function ConceptNode({ data }: NodeProps & { data: ConceptNodeData }) {
           learned ? "!bg-emerald-500/50" : "!bg-indigo-500/50"
         }`}
       />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="target-left"
+        className={`!h-1.5 !w-1.5 !border-0 ${
+          learned ? "!bg-emerald-500/50" : "!bg-indigo-500/50"
+        }`}
+      />
       <div className="flex items-center gap-2">
         <div
           className={`flex h-6 w-6 items-center justify-center rounded-md ${
@@ -86,6 +94,14 @@ function ConceptNode({ data }: NodeProps & { data: ConceptNodeData }) {
       <Handle
         type="source"
         position={Position.Bottom}
+        className={`!h-1.5 !w-1.5 !border-0 ${
+          learned ? "!bg-emerald-500/50" : "!bg-indigo-500/50"
+        }`}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="source-right"
         className={`!h-1.5 !w-1.5 !border-0 ${
           learned ? "!bg-emerald-500/50" : "!bg-indigo-500/50"
         }`}
