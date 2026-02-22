@@ -131,7 +131,7 @@ export default function Home() {
 
       {/* Graph Title */}
       {graph && (
-        <div className="fixed left-6 bottom-6 z-50">
+        <div className="fixed right-6 bottom-6 z-50 text-right">
           <p className="text-[11px] font-medium uppercase tracking-wider text-white/20">
             Knowledge Graph
           </p>
