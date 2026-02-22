@@ -46,6 +46,8 @@ function buildSystemPrompt(topicCount: number | null): string {
 
    A topic can have relationships with many other topics. Include all meaningful relationships. Only include relationships that genuinely exist in the document's content.
 
+   CRITICAL: The resulting graph MUST be fully connected — every topic must be reachable from every other topic through the chain of relationships. Do not leave any topic isolated or any group of topics disconnected from the rest. Since all topics come from the same document, there is always a way to connect them.
+
 Return valid JSON with this exact structure:
 {
   "concepts": [
@@ -111,7 +113,7 @@ export async function* generateKnowledgeGraphStream(
     const delta = chunk.choices[0]?.delta?.content || "";
     content += delta;
 
-    const rawProgress = Math.min(95, (content.length / estimatedChars) * 90 + 5);
+    const rawProgress = Math.min(90, (content.length / estimatedChars) * 85 + 5);
     const progress = Math.round(rawProgress);
 
     if (progress > lastYieldedProgress + 2) {
@@ -119,8 +121,6 @@ export async function* generateKnowledgeGraphStream(
       yield { progress, stage: "Generating knowledge graph..." };
     }
   }
-
-  yield { progress: 97, stage: "Building graph layout..." };
 
   if (!content) {
     throw new Error("OpenAI returned an empty response");
@@ -172,19 +172,145 @@ export async function* generateKnowledgeGraphStream(
     }
   }
 
-  if (concepts.length > 1 && relations.length === 0) {
-    for (let i = 1; i < concepts.length; i++) {
-      relations.push({
-        source: concepts[0].id,
-        target: concepts[i].id,
-        label: "relates to",
-        strength: 5,
-      });
+  // Check connectivity and ask AI to bridge disconnected components
+  const components = findConnectedComponents(concepts, relations);
+
+  if (components.length > 1) {
+    yield { progress: 92, stage: "Connecting isolated topics..." };
+
+    const idToLabel = new Map<string, string>();
+    for (const c of concepts) {
+      idToLabel.set(c.id, c.label);
+    }
+
+    const bridgeRelations = await askAIToBridgeComponents(
+      components,
+      idToLabel,
+      truncated
+    );
+
+    for (const rel of bridgeRelations) {
+      const sourceId = labelToId.get(rel.source.toLowerCase());
+      const targetId = labelToId.get(rel.target.toLowerCase());
+
+      if (sourceId && targetId && sourceId !== targetId) {
+        const edgeKey = [sourceId, targetId].sort().join("-");
+        if (!addedEdges.has(edgeKey)) {
+          addedEdges.add(edgeKey);
+          relations.push({
+            source: sourceId,
+            target: targetId,
+            label: rel.label,
+            strength: Math.max(1, Math.min(10, rel.strength || 5)),
+          });
+        }
+      }
     }
   }
+
+  yield { progress: 97, stage: "Building graph layout..." };
 
   const title = filename.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
   const graph: KnowledgeGraph = { concepts, relations, title };
 
   yield { progress: 100, stage: "Complete!", graph };
+}
+
+function findConnectedComponents(
+  concepts: KnowledgeConcept[],
+  relations: KnowledgeRelation[]
+): string[][] {
+  if (concepts.length <= 1) return [concepts.map((c) => c.id)];
+
+  const adjacency = new Map<string, Set<string>>();
+  for (const c of concepts) {
+    adjacency.set(c.id, new Set());
+  }
+  for (const rel of relations) {
+    adjacency.get(rel.source)?.add(rel.target);
+    adjacency.get(rel.target)?.add(rel.source);
+  }
+
+  const visited = new Set<string>();
+  const components: string[][] = [];
+
+  for (const concept of concepts) {
+    if (visited.has(concept.id)) continue;
+
+    const component: string[] = [];
+    const queue = [concept.id];
+    visited.add(concept.id);
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      component.push(nodeId);
+
+      for (const neighbor of adjacency.get(nodeId) || []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    components.push(component);
+  }
+
+  return components;
+}
+
+async function askAIToBridgeComponents(
+  components: string[][],
+  idToLabel: Map<string, string>,
+  documentText: string
+): Promise<AIRelationship[]> {
+  const componentLabels = components.map((comp) =>
+    comp.map((id) => idToLabel.get(id) || id)
+  );
+
+  const componentDescriptions = componentLabels
+    .map((labels, i) => `Group ${i + 1}: ${labels.join(", ")}`)
+    .join("\n");
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `You are an expert educator analyzing a knowledge graph. The following groups of topics were extracted from the same document but ended up disconnected from each other. Your job is to find genuine, meaningful relationships that connect these groups together.
+
+For each pair of adjacent groups, find at least one real relationship between a topic in one group and a topic in the other group. These must be legitimate conceptual connections that exist in the document — not fabricated ones.
+
+Return valid JSON with this structure:
+{
+  "bridgeRelationships": [
+    {
+      "source": "exact topic label from one group",
+      "target": "exact topic label from another group",
+      "label": "how they relate (2-5 words)",
+      "strength": 1-10
+    }
+  ]
+}
+
+Return only the JSON. No markdown, no explanation.`,
+      },
+      {
+        role: "user",
+        content: `These topic groups are disconnected and need to be connected:\n\n${componentDescriptions}\n\nDocument context (for reference):\n${documentText.slice(0, 8000)}`,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) return [];
+
+  try {
+    const parsed: { bridgeRelationships: AIRelationship[] } = JSON.parse(content);
+    return parsed.bridgeRelationships || [];
+  } catch {
+    return [];
+  }
 }
