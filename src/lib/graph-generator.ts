@@ -21,7 +21,7 @@ interface AIRelationship {
 function buildSystemPrompt(topicCount: number | null): string {
   const topicInstruction = topicCount
     ? `Identify exactly ${topicCount} meaningful, distinct topics/concepts from the document.`
-    : `Identify between 8 and 25 meaningful, distinct topics/concepts from the document. Choose the number that best fits the document's complexity and breadth — use fewer for focused documents, more for comprehensive ones.`;
+    : `Identify between 2 and 60 meaningful, distinct topics/concepts from the document. It is critical that you choose the number that is most appropriate for this specific document — a short, focused article might need only 3-8 topics; a textbook chapter might need 15-25; a comprehensive document might warrant 30-50. Do not pad with filler topics or omit important concepts. Let the document's actual content and scope dictate the count.`;
 
   const countInstruction = topicCount
     ? `Return exactly ${topicCount} concepts.`
