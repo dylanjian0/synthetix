@@ -3,7 +3,7 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const GRADING_PROMPT = `You are a strict but fair educator grading a student's answer to a question about a topic they are studying.
+const GRADING_PROMPT = `You are a fair educator grading a student's answer to a question about a topic they are studying.
 
 You will be given:
 - The topic label
@@ -13,9 +13,10 @@ You will be given:
 
 Grade the answer on a scale of 0-100 based on:
 - Accuracy: Does the answer correctly address the question?
-- Depth: Does it show genuine understanding, not just surface-level recall?
-- Completeness: Does it cover the key aspects of the topic?
-- Clarity: Is the explanation coherent and well-reasoned?
+- Understanding: Does it demonstrate they grasp the core concept?
+- Relevance: Is the answer on-topic and appropriate?
+
+IMPORTANT: Short answers are acceptable if they are correct and answer the question. Do not penalize brevity if the answer demonstrates understanding. A concise, accurate answer should score well (75-90). Reserve low scores for answers that are incorrect, off-topic, or show fundamental misunderstanding.
 
 Return valid JSON with this exact structure:
 {
@@ -23,7 +24,7 @@ Return valid JSON with this exact structure:
   "feedback": "<2-3 sentences of specific, constructive feedback>"
 }
 
-Be honest. A vague or incorrect answer should score low. A thorough, accurate answer should score high. No markdown — just JSON.`;
+Be encouraging. If the answer is correct but brief, acknowledge correctness and gently suggest areas for deeper exploration. No markdown — just JSON.`;
 
 export async function POST(request: NextRequest) {
   try {
