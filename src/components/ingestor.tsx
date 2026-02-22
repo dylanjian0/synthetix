@@ -135,9 +135,8 @@ export function Ingestor({ onFileUpload, isProcessing, progress, stage }: Ingest
                   >
                     <div className="flex items-center justify-center gap-1.5">
                       <Sparkles className="h-3 w-3" />
-                      Auto (AI decides)
+                      Auto
                     </div>
-                    <p className="mt-0.5 text-[10px] opacity-60">8-25 topics based on content</p>
                   </button>
                   <button
                     onClick={() => setTopicMode("custom")}
@@ -149,7 +148,6 @@ export function Ingestor({ onFileUpload, isProcessing, progress, stage }: Ingest
                       }`}
                   >
                     Custom
-                    <p className="mt-0.5 text-[10px] opacity-60">Choose 3-30 topics</p>
                   </button>
                 </div>
 
