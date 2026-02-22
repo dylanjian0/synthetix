@@ -9,7 +9,13 @@ interface AIConcept {
   context: string;
   category: string;
   socraticQuestion: string;
-  relatedTopics: string[];
+}
+
+interface AIRelationship {
+  source: string;
+  target: string;
+  label: string;
+  strength: number;
 }
 
 const SYSTEM_PROMPT = `You are an expert educator and knowledge graph builder. Given the full text of a document, you must:
@@ -22,7 +28,14 @@ const SYSTEM_PROMPT = `You are an expert educator and knowledge graph builder. G
    - context: The most relevant sentence or passage (verbatim from the document) that explains this topic
    - category: One of "core-concept", "process", "entity", "property", or "example"
    - socraticQuestion: A thought-provoking question that tests deep understanding (not just recall) of this topic. The question should push the student to think critically, make connections, or apply the concept.
-   - relatedTopics: An array of labels (from your list of 18) that this topic is closely related to
+
+3. Separately, provide a "relationships" array describing how topics connect to each other. Each relationship has:
+   - source: The exact label of the source topic
+   - target: The exact label of the target topic
+   - label: A short phrase (2-5 words) describing HOW they relate (e.g. "is a type of", "depends on", "contrasts with", "builds upon", "is applied in", "enables")
+   - strength: An integer from 1-10 indicating how closely related they are (10 = inseparable, 1 = loosely related)
+
+   A topic can have relationships with many other topics. Include all meaningful relationships — aim for 25-45 total relationships. Only include relationships that genuinely exist in the document's content.
 
 Return valid JSON with this exact structure:
 {
@@ -32,8 +45,15 @@ Return valid JSON with this exact structure:
       "description": "...",
       "context": "...",
       "category": "...",
-      "socraticQuestion": "...",
-      "relatedTopics": ["...", "..."]
+      "socraticQuestion": "..."
+    }
+  ],
+  "relationships": [
+    {
+      "source": "...",
+      "target": "...",
+      "label": "...",
+      "strength": 8
     }
   ]
 }
@@ -64,7 +84,8 @@ export async function generateKnowledgeGraph(
     throw new Error("OpenAI returned an empty response");
   }
 
-  const parsed: { concepts: AIConcept[] } = JSON.parse(content);
+  const parsed: { concepts: AIConcept[]; relationships: AIRelationship[] } =
+    JSON.parse(content);
 
   if (!parsed.concepts || parsed.concepts.length === 0) {
     throw new Error("OpenAI returned no concepts");
@@ -90,22 +111,20 @@ export async function generateKnowledgeGraph(
   const relations: KnowledgeRelation[] = [];
   const addedEdges = new Set<string>();
 
-  for (let i = 0; i < parsed.concepts.length && i < 18; i++) {
-    const aiConcept = parsed.concepts[i];
-    const sourceId = `node-${i}`;
+  for (const rel of parsed.relationships || []) {
+    const sourceId = labelToId.get(rel.source.toLowerCase());
+    const targetId = labelToId.get(rel.target.toLowerCase());
 
-    for (const relatedLabel of aiConcept.relatedTopics || []) {
-      const targetId = labelToId.get(relatedLabel.toLowerCase());
-      if (targetId && targetId !== sourceId) {
-        const edgeKey = [sourceId, targetId].sort().join("-");
-        if (!addedEdges.has(edgeKey)) {
-          addedEdges.add(edgeKey);
-          relations.push({
-            source: sourceId,
-            target: targetId,
-            label: "relates to",
-          });
-        }
+    if (sourceId && targetId && sourceId !== targetId) {
+      const edgeKey = [sourceId, targetId].sort().join("-");
+      if (!addedEdges.has(edgeKey)) {
+        addedEdges.add(edgeKey);
+        relations.push({
+          source: sourceId,
+          target: targetId,
+          label: rel.label,
+          strength: Math.max(1, Math.min(10, rel.strength || 5)),
+        });
       }
     }
   }
@@ -116,6 +135,7 @@ export async function generateKnowledgeGraph(
         source: concepts[0].id,
         target: concepts[i].id,
         label: "relates to",
+        strength: 5,
       });
     }
   }
