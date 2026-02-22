@@ -176,8 +176,8 @@ export function Ingestor({ onFileUpload, isProcessing, progress, stage }: Ingest
                       </div>
                     </div>
                     <div className="mt-1 flex justify-between text-[10px] text-white/20">
-                      <span>3 (focused)</span>
-                      <span>30 (comprehensive)</span>
+                      <span>3</span>
+                      <span>30</span>
                     </div>
                   </motion.div>
                 )}
