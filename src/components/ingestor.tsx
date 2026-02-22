@@ -2,14 +2,16 @@
 
 import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, Loader2, Link2, X } from "lucide-react";
+import { Upload, FileText, Link2, X, Sparkles } from "lucide-react";
 
 interface IngestorProps {
   onFileUpload: (file: File) => void;
   isProcessing: boolean;
+  progress: number;
+  stage: string;
 }
 
-export function Ingestor({ onFileUpload, isProcessing }: IngestorProps) {
+export function Ingestor({ onFileUpload, isProcessing, progress, stage }: IngestorProps) {
   const [activeTab, setActiveTab] = useState<"pdf" | "youtube">("pdf");
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -98,11 +100,53 @@ export function Ingestor({ onFileUpload, isProcessing }: IngestorProps) {
                 transition={{ duration: 0.2 }}
               >
                 {isProcessing ? (
-                  <div className="flex items-center justify-center gap-3 py-6">
-                    <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
-                    <div>
-                      <p className="text-sm font-medium text-white/80">Generating knowledge graph...</p>
-                      <p className="text-[11px] text-white/30">Analyzing {fileName}</p>
+                  <div className="py-6">
+                    <div className="flex items-center justify-center gap-3 mb-4">
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      >
+                        <Sparkles className="h-5 w-5 text-indigo-400" />
+                      </motion.div>
+                      <div>
+                        <p className="text-sm font-medium text-white/80">
+                          {stage || "Generating knowledge graph..."}
+                        </p>
+                        <p className="text-[11px] text-white/30">
+                          {fileName}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                      <motion.div
+                        className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-indigo-500 to-indigo-400"
+                        initial={{ width: "0%" }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                        animate={{ x: ["-100%", "100%"] }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                      />
+                    </div>
+
+                    {/* Progress percentage */}
+                    <div className="mt-2 flex justify-between text-[11px] text-white/30">
+                      <span>{progress}%</span>
+                      <span>
+                        {progress < 10
+                          ? "Initializing..."
+                          : progress < 50
+                            ? "Analyzing document..."
+                            : progress < 90
+                              ? "Generating topics..."
+                              : progress < 100
+                                ? "Building graph..."
+                                : "Complete!"}
+                      </span>
                     </div>
                   </div>
                 ) : (
