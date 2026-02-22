@@ -6,10 +6,16 @@ import { Ingestor } from "@/components/ingestor";
 import { NodeDetailSidebar } from "@/components/node-detail-sidebar";
 import type { KnowledgeGraph, KnowledgeConcept } from "@/types";
 
+interface ProgressState {
+  progress: number;
+  stage: string;
+}
+
 export default function Home() {
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progressState, setProgressState] = useState<ProgressState>({ progress: 0, stage: "" });
 
   const selectedConcept: KnowledgeConcept | null =
     graph?.concepts.find((c) => c.id === selectedNodeId) ?? null;
@@ -20,6 +26,7 @@ export default function Home() {
     setIsProcessing(true);
     setGraph(null);
     setSelectedNodeId(null);
+    setProgressState({ progress: 0, stage: "Starting..." });
 
     try {
       const formData = new FormData();
@@ -42,6 +49,7 @@ export default function Home() {
       alert(error instanceof Error ? error.message : "Failed to process PDF");
     } finally {
       setIsProcessing(false);
+      setProgressState({ progress: 0, stage: "" });
     }
   }, []);
 
