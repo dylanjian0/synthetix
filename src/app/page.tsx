@@ -73,7 +73,14 @@ export default function Home() {
               }
 
               if (data.graph) {
-      setGraph(data.graph);
+                setGraph(data.graph);
+              }
+            } catch (parseError) {
+              console.error("Failed to parse SSE data:", parseError);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error("Upload error:", error);
       alert(error instanceof Error ? error.message : "Failed to process PDF");
@@ -146,7 +153,12 @@ export default function Home() {
         onNodeSelect={setSelectedNodeId}
       />
 
-      <Ingestor onFileUpload={handleFileUpload} isProcessing={isProcessing} />
+      <Ingestor
+        onFileUpload={handleFileUpload}
+        isProcessing={isProcessing}
+        progress={progressState.progress}
+        stage={progressState.stage}
+      />
 
       <NodeDetailSidebar
         concept={selectedConcept}
