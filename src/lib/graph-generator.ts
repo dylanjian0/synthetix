@@ -60,13 +60,17 @@ Return valid JSON with this exact structure:
 
 Return exactly 18 concepts. No markdown, no explanation — just the JSON object.`;
 
-export async function generateKnowledgeGraph(
+const ESTIMATED_OUTPUT_CHARS = 9000;
+
+export async function* generateKnowledgeGraphStream(
   text: string,
   filename: string
-): Promise<KnowledgeGraph> {
+): AsyncGenerator<{ progress: number; stage: string; graph?: KnowledgeGraph }> {
   const truncated = text.slice(0, 30000);
 
-  const response = await openai.chat.completions.create({
+  yield { progress: 5, stage: "Connecting to AI..." };
+
+  const stream = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -77,9 +81,27 @@ export async function generateKnowledgeGraph(
     ],
     temperature: 0.3,
     response_format: { type: "json_object" },
+    stream: true,
   });
 
-  const content = response.choices[0]?.message?.content;
+  let content = "";
+  let lastYieldedProgress = 5;
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content || "";
+    content += delta;
+
+    const rawProgress = Math.min(95, (content.length / ESTIMATED_OUTPUT_CHARS) * 90 + 5);
+    const progress = Math.round(rawProgress);
+
+    if (progress > lastYieldedProgress + 2) {
+      lastYieldedProgress = progress;
+      yield { progress, stage: "Generating knowledge graph..." };
+    }
+  }
+
+  yield { progress: 97, stage: "Building graph layout..." };
+
   if (!content) {
     throw new Error("OpenAI returned an empty response");
   }
@@ -141,6 +163,7 @@ export async function generateKnowledgeGraph(
   }
 
   const title = filename.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+  const graph: KnowledgeGraph = { concepts, relations, title };
 
-  return { concepts, relations, title };
+  yield { progress: 100, stage: "Complete!", graph };
 }
