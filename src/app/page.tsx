@@ -42,7 +42,37 @@ export default function Home() {
         throw new Error(data.error || "Failed to process PDF");
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to read response stream");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              if (data.progress !== undefined) {
+                setProgressState({ progress: data.progress, stage: data.stage || "" });
+              }
+
+              if (data.graph) {
       setGraph(data.graph);
     } catch (error) {
       console.error("Upload error:", error);
